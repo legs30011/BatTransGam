@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='utf-8' />
+  <title>Seguimiento a Vehiculo</title>
+  <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+  <script src='https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.js'></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.css' rel='stylesheet' />
+  <script src='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.0/mapbox-gl-directions.js'></script>
+  <link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.0/mapbox-gl-directions.css' type='text/css' />
+  <script src="https://www.gstatic.com/firebasejs/8.4.3/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.4.3/firebase-database.js"></script>
+  <script src="https://unpkg.com/@turf/turf"></script>
+  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.7.0/mapbox-gl-geocoder.min.js"></script>
+  <meta http-equiv="Content-Language" content="es">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+    }
+    #map {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+    }
+    .mapboxgl-ctrl-directions {
+      margin-top: 50px;
+    }
+    #hide-instructions {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1;
+      background-color: #fff;
+      padding: 10px;
+      border-radius: 4px;
+      box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+    }
+    #hide-instructions:hover {
+      background-color: #f2f2f2;
+    }
+  </style>
+</head>
+<body>
+  <div id='map'></div>
+  <button id="hide-instructions">Ocultar instrucciones</button>
+  <script>
+    mapboxgl.accessToken = 'pk.eyJ1IjoibGVnczMwMDExIiwiYSI6ImNsZzFwZXB4bzFpdnIzanBoZzViaGtjYWUifQ.ON0Tap8KMh2TCgZ-m6otDg';
+    mapboxgl.setRTLTextPlugin('https://cdn.jsdelivr.net/npm/mapbox-gl-rtl-text@4.0.0/dist/mapbox-gl-rtl-text.js');
+
+    var map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/legs30011/cliuegbvm01yu01p15509116v',
+      center: [-66.1599281, -17.3836435], // emi
+      zoom: 15,
+      language: 'es'
+    });
+
+    var marker = new mapboxgl.Marker()
+      .setLngLat([-66.1599281, -17.3836435])
+      .addTo(map);
+
+    var directions = new MapboxDirections({
+      accessToken: mapboxgl.accessToken,
+      unit: 'metric',
+      profile: 'mapbox/driving',
+      alternatives: true,
+      language: 'es'
+    });
+
+    map.addControl(directions, 'top-left');
+
+    document.getElementById('hide-instructions').addEventListener('click', function() {
+      var instructionsContainer = document.getElementsByClassName('directions-control-instructions');
+      if (instructionsContainer.length > 0) {
+        instructionsContainer[0].style.display = 'none';
+      }
+    });
+
+    var config = {
+      apiKey: "AIzaSyBu9i7XfQ-Ts7HX-5Op8l8YLjGnSZ-Af6A",
+      authDomain: "geolocalizacion-e994b.firebaseapp.com",
+      databaseURL: "https://geolocalizacion-e994b.firebaseio.com",
+      projectId: "geolocalizacion-e994b",
+      storageBucket: "geolocalizacion-e994b.appspot.com",
+      messagingSenderId: "697593689238",
+      appId: "1:697593689238:web:3379a0558c616f52d8feb7",
+      measurementId:"G-D6DHGYMWG0"
+    };
+
+    firebase.initializeApp(config);
+
+    var database = firebase.database();
+    var ref = database.ref("1702-GIK");
+
+    var lineCoordinates = [];
+
+    ref.on("child_added", function(snapshot) {
+      var data = snapshot.val();
+      console.log(data);
+      if (data.lat) {
+        var lat = data.lat;
+        var lng = data.lng;
+        var posicion = [lng, lat];
+
+        lineCoordinates.push(posicion);
+
+        if (lineCoordinates.length > 50000) {
+          lineCoordinates.shift();
+        }
+
+        var lineString = turf.lineString(lineCoordinates);
+
+        if (map.getSource('line')) {
+          map.getSource('line').setData(lineString);
+        } else {
+          map.addSource('line', {
+            type: 'geojson',
+            data: lineString,
+          });
+          map.addLayer({
+            id: 'line',
+            type: 'line',
+            source: 'line',
+            layout: {
+              'line-cap': 'round',
+              'line-join': 'round',
+            },
+            paint: {
+              'line-color': 'yellow',
+              'line-width': 5,
+              'line-opacity': 0.8,
+            },
+          });
+        }
+
+        marker.setLngLat(posicion);
+
+        console.log("Nueva posición: lat=" + lat + ", lng=" + lng);
+
+        // Obtiene las coordenadas actuales del mapa
+        var currentCenter = map.getCenter();
+        var currentZoom = map.getZoom();
+        
+        // Calcula el nuevo centro y zoom del mapa
+        var newCenter = mapboxgl.LngLat.convert(posicion);
+        var newZoom = currentZoom; // Puedes ajustar este valor para cambiar el nivel de zoom deseado
+        
+        // Ajusta el centro y zoom del mapa de manera gradual
+        map.easeTo({
+          center: newCenter,
+          zoom: newZoom,
+          duration: 2000, // Puedes ajustar este valor para cambiar la duración de la animación
+        });
+      } else {
+        console.log("No se encontró la propiedad 'posicion' en los datos de Firebase");
+      }
+    });
+
+    marker.getElement().addEventListener('mouseenter', function() {
+      var popup = new mapboxgl.Popup({ offset: 25 })
+        .setHTML('<h3>Información del vehículo</h3><p>Vehículo: 1702-GIK<br>Conductor: Jose Miguel</p>')
+        .addTo(map);
+
+      marker.setPopup(popup);
+    });
+
+    marker.getElement().addEventListener('mouseleave', function() {
+      marker.getPopup().remove();
+    });
+  </script>
+</body>
+</html>
